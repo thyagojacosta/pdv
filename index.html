@@ -715,7 +715,7 @@
     <!-- SCRIPT DO SISTEMA -->
     <script>
         // ==========================================
-        // CONFIGURAÇÃO DO SUPABASE
+        // CONFIGURAÇÃO DO SUPABASE (MULTI-PC)
         // ==========================================
         let supabaseUrl = localStorage.getItem('grafica_pro_supabase_url') || '';
         let supabaseKey = localStorage.getItem('grafica_pro_supabase_key') || '';
@@ -747,6 +747,13 @@
             applyCompanyConfigUI();
             renderAll();
             
+            // Verifica se o usuário já estava logado na sessão atual para não deslogar ao atualizar (F5)
+            const loggedUser = sessionStorage.getItem('grafica_pro_logged_user');
+            if (loggedUser) {
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('header-user-name').innerText = loggedUser;
+            }
+
             const tomorrow = new Date();
             tomorrow.setDate(tomorrow.getDate() + 3);
             const tStr = tomorrow.toISOString().substring(0, 10);
@@ -817,7 +824,11 @@
 
             try {
                 supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
-                showToast('Credenciais salvas com sucesso!', 'success');
+                
+                await sbUpsert('configuracoes', { chave: 'supabase_url', valor: supabaseUrl }, 'chave');
+                await sbUpsert('configuracoes', { chave: 'supabase_key', valor: supabaseKey }, 'chave');
+
+                showToast('Credenciais salvas e gravadas na nuvem com sucesso!', 'success');
                 await syncFromSupabase(true);
             } catch (err) {
                 showToast('Erro ao inicializar cliente Supabase.', 'error');
@@ -870,6 +881,13 @@
                         if (item.chave === 'city') companyConfig.city = item.valor;
                         if (item.chave === 'address') companyConfig.address = item.valor;
                         if (item.chave === 'footer') companyConfig.footer = item.valor;
+                        
+                        if (item.chave === 'supabase_url' && !localStorage.getItem('grafica_pro_supabase_url')) {
+                            localStorage.setItem('grafica_pro_supabase_url', item.valor);
+                        }
+                        if (item.chave === 'supabase_key' && !localStorage.getItem('grafica_pro_supabase_key')) {
+                            localStorage.setItem('grafica_pro_supabase_key', item.valor);
+                        }
                     });
                 }
 
@@ -886,7 +904,6 @@
             }
         }
 
-        // --- MÉTODOS DE UPSERT NO SUPABASE ---
         async function sbUpsert(table, dataObj, matchKey = 'id') {
             if (!supabaseClient) return;
             try {
@@ -905,7 +922,6 @@
             }
         }
 
-        // --- BACKUP LOCAL JSON ---
         function exportBackupJSON() {
             const backup = {
                 version: '1.0',
@@ -962,10 +978,14 @@
             const u = document.getElementById('login-username').value.trim();
             const p = document.getElementById('login-password').value.trim();
             const found = dbUsers.find(x => x.username.toLowerCase() === u.toLowerCase() && String(x.password) === String(p));
+            
             if (found || (u === 'admin' && p === 'admin')) {
+                const usernameValid = found ? found.username : u;
+                sessionStorage.setItem('grafica_pro_logged_user', usernameValid);
+
                 document.getElementById('login-screen').classList.add('hidden');
                 document.getElementById('login-error-msg').classList.add('hidden');
-                document.getElementById('header-user-name').innerText = found ? found.username : u;
+                document.getElementById('header-user-name').innerText = usernameValid;
                 renderDashboard();
             } else {
                 document.getElementById('login-error-msg').classList.remove('hidden');
@@ -973,6 +993,7 @@
         }
 
         function handleLogout() { 
+            sessionStorage.removeItem('grafica_pro_logged_user');
             document.getElementById('login-screen').classList.remove('hidden'); 
         }
 
@@ -1014,7 +1035,6 @@
             updateSelects();
         }
 
-        // --- DASHBOARD ---
         function renderDashboard() {
             let revTotal = 0;
             let revReceived = 0;
@@ -1092,7 +1112,6 @@
             if(editProductSelect) editProductSelect.innerHTML = optionsHtml;
         }
 
-        // --- GESTÃO DE PRODUTOS ---
         function openProductModal(id = null) {
             if (id) {
                 const p = dbProducts.find(x => String(x.id) === String(id));
@@ -1170,7 +1189,6 @@
             `).join('');
         }
 
-        // --- CLIENTES E USUÁRIOS ---
         function openClientModal() { document.getElementById('modal-client').classList.remove('hidden'); }
         function closeClientModal() { document.getElementById('modal-client').classList.add('hidden'); }
         async function handleSaveClient(e) {
@@ -1240,7 +1258,6 @@
             showToast('Usuário excluído!', 'info');
         }
 
-        // --- GESTÃO DE PEDIDOS ---
         function openNewOrderModal() {
             updateSelects();
             newOrderCart = [];
@@ -1371,10 +1388,12 @@
             }
         }
 
-        // --- EDITAR PEDIDO EXISTENTE ---
+        // --- CORREÇÃO: Abertura correta do modal de edição de pedido ---
         function openEditOrderModal(id) {
             const s = dbSales.find(x => String(x.id) === String(id));
             if (!s) return;
+            
+            // Fecha primeiro os detalhes do pedido para evitar sobreposição (z-index)
             closeOrderDetailsModal();
 
             document.getElementById('edit-order-id').value = s.id;
@@ -1624,7 +1643,6 @@
 
         function closeOrderDetailsModal() { document.getElementById('modal-order-details').classList.add('hidden'); }
 
-        // --- IMPRESSÃO TÉRMICA 80MM ---
         function printThermalReceipt(id) {
             const s = dbSales.find(x => String(x.id) === String(id));
             if (!s) return;
